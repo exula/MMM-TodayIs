@@ -15,6 +15,7 @@ It dynamically gathers public holidays, historical events, and fun observances, 
 - Nager.Date public holiday source.
 - Wikipedia On This Day source.
 - Public List of National Days page as a supplemental observance source.
+- Bundled month/day observances as a reliable baseline when live sources are unavailable.
 - Wikimedia Commons image discovery and local caching.
 - AI-generated copy/art direction rendered by deterministic CSS.
 - Multiple built-in visual styles.
@@ -59,6 +60,8 @@ Add to `config/config.js`:
       publicHolidays: true,
       wikipedia: true,
       nationalDaysPage: true,
+      funHolidays: true,
+      localList: true,
       images: true
     },
 
@@ -122,10 +125,10 @@ cache/YYYY-MM-DD.json
 Images are cached under:
 
 ```text
-public/cache/YYYY-MM-DD.jpg
+public/cache/YYYY-MM-DD-<image-hash>.<jpg|png|webp>
 ```
 
-The module can prefetch tomorrow after successfully building today. This gives you a cached next-day placard if the network is temporarily unavailable during the next morning's startup.
+The module silently prefetches tomorrow after successfully building today. Prefetched content is cached without being sent to the display, giving you a next-day placard if the network is temporarily unavailable during the next morning's startup.
 
 Old JSON and image cache files are pruned after `cacheDays`.
 
@@ -155,4 +158,4 @@ Run:
 npm run validate
 ```
 
-The validator checks file layout, JavaScript syntax, module naming, API endpoints, fallback paths, cache behavior, secret handling, and configuration structure. It cannot guarantee that external services remain available or that an API key has access to a particular model.
+The validator checks file layout, JavaScript syntax, module naming, API endpoints, fallback paths, cache behavior, secret handling, and configuration structure. It also runs behavioral regression tests for silent prefetching, event-specific image queries, deterministic captions, and emoji configuration. It cannot guarantee that external services remain available or that an API key has access to a particular model.

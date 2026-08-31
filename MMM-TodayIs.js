@@ -70,9 +70,9 @@ Module.register("MMM-TodayIs", {
       hour: "2-digit", minute: "2-digit", hour12: false
     }).formatToParts(now).reduce((o, p) => (o[p.type] = p.value, o), {});
     const key = `${parts.year}-${parts.month}-${parts.day}`;
-    if (parts.hour === String(this.config.updateHour).padStart(2, "0") &&
-        parts.minute === String(this.config.updateMinute).padStart(2, "0") &&
-        this.lastRefreshKey !== key) {
+    const currentMinutes = Number(parts.hour) * 60 + Number(parts.minute);
+    const updateMinutes = Number(this.config.updateHour) * 60 + Number(this.config.updateMinute);
+    if (currentMinutes >= updateMinutes && this.lastRefreshKey !== key) {
       this.lastRefreshKey = key;
       this.sendSocketNotification("REQUEST_TODAY");
     }
@@ -80,13 +80,20 @@ Module.register("MMM-TodayIs", {
 
   renderPlacard(data) {
     if (!this.wrapper || !data) return;
+    const today = dateKeyInTimezone(new Date(), this.config.timezone);
+    if (data.date !== today) {
+      if (this.config.debug) console.warn(`[MMM-TodayIs] Ignoring placard for ${data.date}; today is ${today}`);
+      return;
+    }
     this.placard = data;
+    this.lastRefreshKey = data.date;
     const old = this.wrapper.querySelector(".today-is");
     if (old) old.classList.add("today-is-out");
 
     const card = document.createElement("div");
     card.className = `today-is style-${safeClass(data.style || "modern")}`;
     card.style.setProperty("--accent", data.accentColor || "#f4b942");
+    card.style.setProperty("--transition-duration", `${Number(this.config.transitionDuration) || 1000}ms`);
     if (data.imageUrl) card.style.setProperty("--background-image", `url("${escapeCssUrl(data.imageUrl)}")`);
 
     const veil = document.createElement("div");
@@ -101,10 +108,12 @@ Module.register("MMM-TodayIs", {
     eyebrow.textContent = data.eyebrow || "TODAY";
     content.appendChild(eyebrow);
 
-    const emoji = document.createElement("div");
-    emoji.className = "today-is-emoji";
-    emoji.textContent = data.emoji || "✨";
-    content.appendChild(emoji);
+    if (data.emoji) {
+      const emoji = document.createElement("div");
+      emoji.className = "today-is-emoji";
+      emoji.textContent = data.emoji;
+      content.appendChild(emoji);
+    }
 
     const title = document.createElement("div");
     title.className = "today-is-title";
@@ -150,6 +159,12 @@ function escapeCssUrl(value) {
   return String(value).replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/\n/g, "");
 }
 function formatDate(value, timezone) {
-  const date = new Date(`${value}T12:00:00`);
-  return new Intl.DateTimeFormat("en-US", { timeZone: timezone, month: "long", day: "numeric", year: "numeric" }).format(date);
+  const date = new Date(`${value}T12:00:00Z`);
+  return new Intl.DateTimeFormat("en-US", { timeZone: "UTC", month: "long", day: "numeric", year: "numeric" }).format(date);
+}
+function dateKeyInTimezone(date, timezone) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: timezone, year: "numeric", month: "2-digit", day: "2-digit"
+  }).formatToParts(date).reduce((out, part) => (out[part.type] = part.value, out), {});
+  return `${parts.year}-${parts.month}-${parts.day}`;
 }
