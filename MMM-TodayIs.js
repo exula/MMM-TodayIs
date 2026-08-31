@@ -12,7 +12,7 @@ Module.register("MMM-TodayIs", {
     cacheDays: 14,
     prefetchTomorrow: true,
     ai: { enabled: true, model: "gpt-5.6-luna", webSearch: true },
-    sources: { publicHolidays: true, wikipedia: true, nationalDaysPage: true, images: true },
+    sources: { publicHolidays: true, wikipedia: true, nationalDaysPage: true, funHolidays: true, localList: true, images: true },
     fallback: { enabled: true, useEmoji: true },
     transitionDuration: 1000,
     debug: false

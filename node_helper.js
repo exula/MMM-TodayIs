@@ -18,6 +18,7 @@ const DEFAULTS = {
     publicHolidays: true,
     wikipedia: true,
     nationalDaysPage: true,
+    funHolidays: true,
     images: true
   },
   fallback: {
@@ -121,14 +122,82 @@ module.exports = NodeHelper.create({
 
   async collectCandidates(date) {
     const jobs = [];
+    this.log(this.config)
     if (this.config.sources?.publicHolidays) jobs.push(this.fetchNager(date));
     if (this.config.sources?.wikipedia) jobs.push(this.fetchWikipedia(date));
     if (this.config.sources?.nationalDaysPage) jobs.push(this.fetchNationalDaysPage(date));
+    if (this.config.sources?.funHolidays) jobs.push(this.fetchFunHolidays(date));
+    if (this.config.sources?.localList) jobs.push(this.fetchLocalList(date));
     const results = await Promise.all(jobs.map(p => p.catch(err => {
       this.log(`source unavailable: ${err.message}`);
       return [];
     })));
     return results.flat().filter(Boolean).sort((a, b) => (b.score || 0) - (a.score || 0)).slice(0, 60);
+  },
+
+  async fetchLocalList(date) {
+    this.log("Fetching Local List of events")
+    const result = [];
+
+    try {
+      if (!date || typeof date !== "string") {
+        this.log("fetchLocalList: invalid date");
+        return result;
+      }
+
+      const [, month, day] = date.split("-");
+
+      if (!month || !day) {
+        this.log(`fetchLocalList: invalid date format: ${date}`);
+        return result;
+      }
+
+      const mm = String(Number(month)).padStart(2, "0");
+      const dd = String(Number(day)).padStart(2, "0");
+      const dateKey = `${mm}-${dd}`;
+
+      const file = path.join(this.path, "public", "static_holidays.json");
+
+      const data = JSON.parse(fs.readFileSync(file, "utf8"));
+
+      if (!data || typeof data !== "object" || Array.isArray(data)) {
+        this.log("fetchLocalList: local holiday file contains invalid JSON structure");
+        return result;
+      }
+
+      const events = data[dateKey];
+
+      if (!Array.isArray(events)) {
+        return result;
+      }
+
+      // Normalize the entries so the rest of the module can
+      // treat local events the same as API-provided events.
+      for (const event of events) {
+        if (!event || typeof event !== "object") {
+          continue;
+        }
+
+        if (!event.title || typeof event.title !== "string") {
+          continue;
+        }
+
+        result.push({
+          title: event.title.trim(),
+          description:
+            typeof event.description === "string"
+              ? event.description.trim()
+              : "",
+          source: "local",
+          date: dateKey
+        });
+      }
+
+    } catch (err) {
+      this.log(`Error reading local list: ${err.message}`);
+    }
+
+    return result;
   },
 
   async fetchNager(date) {
@@ -142,6 +211,29 @@ module.exports = NodeHelper.create({
       source: "Nager.Date",
       score: x.global ? 95 : 75
     })) : [];
+  },
+
+  async fetchFunHolidays(date) {
+    const [, month, day] = date.split("-");
+    const mm = String(Number(month)).padStart(2, "0");
+    const dd = String(Number(day)).padStart(2, "0");
+    const url = `https://todaysholiday.herokuapp.com/holidays/${mm}/${dd}`;
+    this.log(`Fetching ${url}`)
+    const data = await fetchJson(url);
+    const result = [];
+    // Example output 
+    // [{"tags":[],"_id":"60a2c383de7f16354791f65b","name":"National Bow Tie Day","month":8,"day":28},{"tags":[],"_id":"60a2c383de7f16354791f65c","name":"National Cherry Turnovers Day","month":8,"day":28},{"tags":[],"_id":"60a2c383de7f16354791f65a","name":"National Power Rangers Day","month":8,"day":28},{"tags":[],"_id":"60a2c383de7f16354791f65d","name":"Rainbow Bridge Remembrance Day","month":8,"day":28}]
+    for (const x of (data)) {
+      result.push(
+        { 
+          type: "holiday",
+          title: x.name,
+          description: `It's ${x.name}`,
+          source: "Todays Holidays"
+        }
+      )
+    }
+    return result
   },
 
   async fetchWikipedia(date) {
