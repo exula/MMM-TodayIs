@@ -3,14 +3,14 @@ const path = require("path");
 const vm = require("vm");
 
 const root = __dirname;
-const required = ["MMM-TodayIs.js", "MMM-TodayIs.css", "node_helper.js", "package.json", "README.md"];
+const required = ["MMM-TodayIs.js", "MMM-TodayIs.css", "node_helper.js", "package.json", "README.md", "test.js", "smoke.js", "public/static_holidays.json", "preview/index.html", "preview/preview.css", "preview/preview.js", ".github/workflows/validate.yml"];
 let failed = false;
 function ok(name, condition, detail = "") {
   if (condition) console.log(`PASS  ${name}${detail ? ` — ${detail}` : ""}`);
   else { console.error(`FAIL  ${name}${detail ? ` — ${detail}` : ""}`); failed = true; }
 }
 for (const file of required) ok(`file ${file}`, fs.existsSync(path.join(root, file)));
-for (const file of ["MMM-TodayIs.js", "node_helper.js"]) {
+for (const file of ["MMM-TodayIs.js", "node_helper.js", "test.js", "smoke.js", "preview/preview.js"]) {
   try { new vm.Script(fs.readFileSync(path.join(root, file), "utf8"), { filename: file }); ok(`syntax ${file}`, true); }
   catch (e) { ok(`syntax ${file}`, false, e.message); }
 }
@@ -18,6 +18,7 @@ const client = fs.readFileSync(path.join(root, "MMM-TodayIs.js"), "utf8");
 const helper = fs.readFileSync(path.join(root, "node_helper.js"), "utf8");
 const css = fs.readFileSync(path.join(root, "MMM-TodayIs.css"), "utf8");
 const pkg = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
+const localHolidays = JSON.parse(fs.readFileSync(path.join(root, "public", "static_holidays.json"), "utf8"));
 
 ok("module renamed", client.includes('Module.register("MMM-TodayIs"') && !client.includes("MMM-DailyPlacard"));
 ok("CSS renamed", css.includes(".MMM-TodayIs") && !css.includes("MMM-DailyPlacard"));
@@ -35,6 +36,11 @@ ok("fallback can be disabled", helper.includes("this.config.fallback?.enabled"))
 ok("fallback keyword categorization", helper.includes("inferCategory") && helper.includes("CATEGORY_META"));
 ok("fallback caption templates", helper.includes("fallbackCaption") && helper.includes("Apparently, this is a thing"));
 ok("tomorrow prefetch", helper.includes("prefetchTomorrow") && helper.includes("addDays"));
+ok("silent tomorrow prefetch", helper.includes('{ notify: false }'));
+ok("versioned day cache", helper.includes("SCHEMA_VERSION") && helper.includes('sendSocketNotification("DAY"'));
+ok("candidate diagnostics", helper.includes("diagnostics") && helper.includes("durationMs"));
+ok("content policy", helper.includes("isAllowedCandidate") && client.includes("excludeTragedy"));
+ok("rotation notifications", client.includes("TODAYIS_NEXT") && client.includes("TODAYIS_PAUSE") && client.includes("TODAYIS_UPDATED"));
 ok("daily JSON cache", helper.includes("cacheFile(date)") && helper.includes("cacheDays"));
 ok("image cache", helper.includes("publicCacheDir") && helper.includes("cacheImage"));
 ok("cache pruning", helper.includes("pruneCache") && helper.includes("publicCacheDir"));
@@ -42,6 +48,8 @@ ok("safe cache permissions", helper.includes("mode: 0o600"));
 ok("MagicMirror node helper", helper.includes('require("node_helper")') && helper.includes("sendSocketNotification"));
 ok("config hierarchy", client.includes('ai: { enabled: true, model: "gpt-5.6-luna", webSearch: true }') && client.includes("fallback: { enabled: true"));
 ok("README renamed", !fs.readFileSync(path.join(root, "README.md"), "utf8").includes("MMM-DailyPlacard"));
+ok("local observance coverage", Object.keys(localHolidays).length >= 365, `${Object.keys(localHolidays).length} calendar entries`);
+ok("standalone preview", fs.readFileSync(path.join(root, "preview", "index.html"), "utf8").includes("MMM-TodayIs Preview"));
 
 if (failed) process.exit(1);
 console.log("\nValidation complete: all checks passed.");
