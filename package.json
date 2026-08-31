@@ -1,12 +1,13 @@
 {
   "name": "mmm-todayis",
-  "version": "1.1.0",
+  "version": "2.0.0",
   "description": "Hands-off dynamic daily today is events for MagicMirror², with optional OpenAI enrichment and a local fallback renderer.",
   "main": "MMM-TodayIs.js",
   "license": "MIT",
   "engines": { "node": ">=18" },
   "scripts": {
     "test": "node test.js",
+    "smoke": "node smoke.js",
     "validate": "node validate.js && node test.js"
   }
 }

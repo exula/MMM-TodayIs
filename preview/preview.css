@@ -1,0 +1,16 @@
+:root { color-scheme: dark; font-family: system-ui, sans-serif; }
+* { box-sizing: border-box; }
+body { margin: 0; background: #090a0d; color: #f4f5f7; }
+main { min-height: 100vh; display: grid; grid-template-rows: auto 1fr auto; }
+header { display: flex; align-items: center; justify-content: space-between; gap: 24px; padding: 14px 18px; background: #14161c; border-bottom: 1px solid #292c35; }
+header span { color: #8e94a3; }
+.controls { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
+label { display: flex; align-items: center; gap: 5px; color: #b9beca; font-size: 12px; }
+input, select, button, textarea { color: inherit; background: #20232b; border: 1px solid #3a3e49; border-radius: 5px; padding: 6px 8px; }
+input[type="number"] { width: 72px; }
+button { cursor: pointer; }
+.stage { display: grid; place-items: center; overflow: auto; padding: 30px; background: radial-gradient(circle at center, #222631, #090a0d 68%); }
+details { padding: 12px 18px 18px; background: #14161c; }
+textarea { display: block; width: 100%; min-height: 190px; margin: 10px 0; resize: vertical; font: 12px/1.4 ui-monospace, monospace; }
+#error { margin-left: 10px; color: #ff8d8d; font-size: 12px; }
+.today-is-wrapper { flex: 0 0 auto; }

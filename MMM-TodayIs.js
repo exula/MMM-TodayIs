@@ -11,15 +11,26 @@ Module.register("MMM-TodayIs", {
     height: 520,
     cacheDays: 14,
     prefetchTomorrow: true,
+    maxEvents: 4,
+    rotationInterval: 15 * 60 * 1000,
+    locale: "en-US",
+    showSource: true,
+    theme: "auto",
     ai: { enabled: true, model: "gpt-5.6-luna", webSearch: true },
     sources: { publicHolidays: true, wikipedia: true, nationalDaysPage: true, funHolidays: true, localList: true, images: true },
     fallback: { enabled: true, useEmoji: true },
+    content: { excludePolitics: true, excludeTragedy: true, excludeDeaths: true, includeBirthdays: false, familyFriendly: true, preferredCategories: ["food", "animal", "science", "nature", "music", "books", "celebration"] },
+    labels: { todayIs: "TODAY IS", onThisDay: "ON THIS DAY", loading: "Finding something interesting about today…", error: "Unable to load today's placard." },
     transitionDuration: 1000,
     debug: false
   },
 
   start() {
     this.placard = null;
+    this.day = null;
+    this.placards = [];
+    this.currentIndex = 0;
+    this.paused = false;
     this.wrapper = null;
     this.lastRefreshKey = null;
     this.sendSocketNotification("CONFIG", this.config);
@@ -28,6 +39,7 @@ Module.register("MMM-TodayIs", {
 
   stop() {
     if (this.checkTimer) clearInterval(this.checkTimer);
+    if (this.rotationTimer) clearInterval(this.rotationTimer);
   },
 
   getStyles() {
@@ -37,13 +49,15 @@ Module.register("MMM-TodayIs", {
   getDom() {
     const wrapper = document.createElement("div");
     wrapper.className = "today-is-wrapper";
+    wrapper.setAttribute("aria-live", "polite");
+    wrapper.setAttribute("aria-atomic", "true");
     wrapper.style.width = `${this.config.width}px`;
     wrapper.style.height = `${this.config.height}px`;
     this.wrapper = wrapper;
 
     const loading = document.createElement("div");
     loading.className = "today-is-loading";
-    loading.textContent = "Finding something interesting about today…";
+    loading.textContent = this.config.labels?.loading || "Finding something interesting about today…";
     wrapper.appendChild(loading);
     return wrapper;
   },
@@ -51,15 +65,68 @@ Module.register("MMM-TodayIs", {
   notificationReceived(notification) {
     if (notification === "ALL_MODULES_STARTED") {
       this.sendSocketNotification("REQUEST_TODAY");
+    } else if (notification === "TODAYIS_REFRESH") {
+      this.sendSocketNotification("FORCE_REFRESH");
+    } else if (notification === "TODAYIS_NEXT") {
+      this.showRelative(1);
+    } else if (notification === "TODAYIS_PREVIOUS") {
+      this.showRelative(-1);
+    } else if (notification === "TODAYIS_PAUSE") {
+      this.paused = true;
+    } else if (notification === "TODAYIS_RESUME") {
+      this.paused = false;
     }
   },
 
   socketNotificationReceived(notification, payload) {
-    if (notification === "PLACARD") {
+    if (notification === "DAY") {
+      this.renderDay(payload);
+    } else if (notification === "PLACARD") {
       this.renderPlacard(payload);
     } else if (notification === "ERROR") {
       this.renderError(payload);
     }
+  },
+
+  renderDay(day) {
+    if (!day || !Array.isArray(day.placards) || !day.placards.length) return;
+    this.day = day;
+    this.placards = day.placards;
+    this.currentIndex = 0;
+    this.renderPlacard(this.placards[0]);
+    this.renderDiagnostics(day.diagnostics || []);
+    this.startRotation();
+    this.sendNotification("TODAYIS_UPDATED", {
+      date: day.date,
+      count: day.placards.length,
+      diagnostics: day.diagnostics || []
+    });
+  },
+
+  startRotation() {
+    if (this.rotationTimer) clearInterval(this.rotationTimer);
+    const interval = Number(this.config.rotationInterval);
+    if (this.placards.length < 2 || !Number.isFinite(interval) || interval < 10000) return;
+    this.rotationTimer = setInterval(() => {
+      if (!this.paused) this.showRelative(1);
+    }, interval);
+  },
+
+  showRelative(offset) {
+    if (!this.placards.length) return;
+    this.currentIndex = (this.currentIndex + offset + this.placards.length) % this.placards.length;
+    this.renderPlacard(this.placards[this.currentIndex]);
+  },
+
+  renderDiagnostics(diagnostics) {
+    if (!this.wrapper) return;
+    const existing = this.wrapper.querySelector(".today-is-debug");
+    if (existing) existing.remove();
+    if (!this.config.debug) return;
+    const panel = document.createElement("div");
+    panel.className = "today-is-debug";
+    panel.textContent = diagnostics.map(item => `${item.source}: ${item.status}${Number.isFinite(item.count) ? ` (${item.count})` : ""}`).join(" · ");
+    this.wrapper.appendChild(panel);
   },
 
   checkRefresh() {
@@ -91,9 +158,14 @@ Module.register("MMM-TodayIs", {
     if (old) old.classList.add("today-is-out");
 
     const card = document.createElement("div");
-    card.className = `today-is style-${safeClass(data.style || "modern")}`;
+    const titleLength = String(data.title || "").length;
+    const titleSize = titleLength > 72 ? "long" : titleLength > 42 ? "medium" : "short";
+    const configuredTheme = this.config.theme && this.config.theme !== "auto" ? this.config.theme : data.style;
+    card.className = `today-is style-${safeClass(configuredTheme || "modern")} title-${titleSize}${data.imageUrl ? "" : " no-image"}`;
     card.style.setProperty("--accent", data.accentColor || "#f4b942");
     card.style.setProperty("--transition-duration", `${Number(this.config.transitionDuration) || 1000}ms`);
+    card.setAttribute("role", "article");
+    card.setAttribute("aria-label", `${data.eyebrow || "Today is"}: ${data.title || "Something interesting"}`);
     if (data.imageUrl) card.style.setProperty("--background-image", `url("${escapeCssUrl(data.imageUrl)}")`);
 
     const veil = document.createElement("div");
@@ -105,7 +177,7 @@ Module.register("MMM-TodayIs", {
 
     const eyebrow = document.createElement("div");
     eyebrow.className = "today-is-eyebrow";
-    eyebrow.textContent = data.eyebrow || "TODAY";
+    eyebrow.textContent = data.eyebrow || this.config.labels?.todayIs || "TODAY IS";
     content.appendChild(eyebrow);
 
     if (data.emoji) {
@@ -127,13 +199,37 @@ Module.register("MMM-TodayIs", {
 
     const date = document.createElement("div");
     date.className = "today-is-date";
-    date.textContent = formatDate(data.date, this.config.timezone);
+    date.textContent = formatDate(data.date, this.config.locale);
     content.appendChild(date);
 
+    if (this.config.showSource && data.source) {
+      const source = document.createElement(data.sourceUrl ? "a" : "div");
+      source.className = "today-is-source";
+      source.textContent = data.source;
+      if (data.sourceUrl) {
+        source.href = data.sourceUrl;
+        source.target = "_blank";
+        source.rel = "noopener noreferrer";
+      }
+      content.appendChild(source);
+    }
+
+    if (this.placards.length > 1) {
+      const position = document.createElement("div");
+      position.className = "today-is-position";
+      position.textContent = `${this.currentIndex + 1} / ${this.placards.length}`;
+      content.appendChild(position);
+    }
+
     if (data.imageAttribution) {
-      const attribution = document.createElement("div");
+      const attribution = document.createElement(data.imagePageUrl ? "a" : "div");
       attribution.className = "today-is-attribution";
       attribution.textContent = data.imageAttribution;
+      if (data.imagePageUrl) {
+        attribution.href = data.imagePageUrl;
+        attribution.target = "_blank";
+        attribution.rel = "noopener noreferrer";
+      }
       content.appendChild(attribution);
     }
 
@@ -143,12 +239,16 @@ Module.register("MMM-TodayIs", {
 
     const cards = this.wrapper.querySelectorAll(".today-is");
     if (cards.length > 2) cards[0].remove();
+    setTimeout(() => {
+      for (const previous of this.wrapper.querySelectorAll(".today-is-out")) previous.remove();
+    }, Number(this.config.transitionDuration) || 1000);
   },
 
   renderError(message) {
     if (!this.wrapper) return;
     const loading = this.wrapper.querySelector(".today-is-loading");
-    if (loading) loading.textContent = message || "Unable to load today's placard.";
+    if (loading) loading.textContent = message || this.config.labels?.error || "Unable to load today's placard.";
+    this.sendNotification("TODAYIS_ERROR", { message: loading?.textContent || message });
   }
 });
 
@@ -158,9 +258,9 @@ function safeClass(value) {
 function escapeCssUrl(value) {
   return String(value).replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/\n/g, "");
 }
-function formatDate(value, timezone) {
+function formatDate(value, locale) {
   const date = new Date(`${value}T12:00:00Z`);
-  return new Intl.DateTimeFormat("en-US", { timeZone: "UTC", month: "long", day: "numeric", year: "numeric" }).format(date);
+  return new Intl.DateTimeFormat(locale || "en-US", { timeZone: "UTC", month: "long", day: "numeric", year: "numeric" }).format(date);
 }
 function dateKeyInTimezone(date, timezone) {
   const parts = new Intl.DateTimeFormat("en-US", {

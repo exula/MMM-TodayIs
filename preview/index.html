@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MMM-TodayIs Preview</title>
+  <link rel="stylesheet" href="../MMM-TodayIs.css">
+  <link rel="stylesheet" href="preview.css">
+</head>
+<body>
+  <main>
+    <header>
+      <div><strong>MMM-TodayIs</strong><span> standalone preview</span></div>
+      <div class="controls">
+        <label>Theme <select id="theme"><option>auto</option><option>modern</option><option>minimal</option><option>retro</option><option>history</option><option>celebration</option><option>science</option><option>food</option><option>animal</option></select></label>
+        <label>Width <input id="width" type="number" value="900" min="320" max="1600"></label>
+        <label>Height <input id="height" type="number" value="520" min="180" max="1000"></label>
+        <label><input id="image" type="checkbox" checked> Image</label>
+        <button id="previous" type="button">Previous</button>
+        <button id="next" type="button">Next</button>
+      </div>
+    </header>
+    <section class="stage"><div id="preview" class="today-is-wrapper"></div></section>
+    <details>
+      <summary>Edit placard JSON</summary>
+      <textarea id="json" spellcheck="false"></textarea>
+      <button id="apply" type="button">Apply JSON</button>
+      <span id="error" role="alert"></span>
+    </details>
+  </main>
+  <script src="preview.js"></script>
+</body>
+</html>

@@ -19,6 +19,12 @@ It dynamically gathers public holidays, historical events, and fun observances, 
 - Wikimedia Commons image discovery and local caching.
 - AI-generated copy/art direction rendered by deterministic CSS.
 - Multiple built-in visual styles.
+- Multi-card daily rotation with manual navigation and pause/resume notifications.
+- Responsive typography and a designed no-image fallback.
+- Source health diagnostics, provenance links, and explainable candidate scoring.
+- Content policy controls for family-friendly displays.
+- A standalone browser preview for theme and layout development.
+- Automatic migration of legacy single-placard cache files.
 - Caches today's result and optionally prefetches tomorrow.
 - Graceful degradation when any upstream source fails.
 - No npm runtime dependencies; Node 18+ built-ins only.
@@ -49,6 +55,11 @@ Add to `config/config.js`:
     updateMinute: 30,
     cacheDays: 14,
     prefetchTomorrow: true,
+    maxEvents: 4,
+    rotationInterval: 15 * 60 * 1000,
+    locale: "en-US",
+    showSource: true,
+    theme: "auto",
 
     ai: {
       enabled: true,
@@ -70,6 +81,22 @@ Add to `config/config.js`:
       useEmoji: true
     },
 
+    content: {
+      excludePolitics: true,
+      excludeTragedy: true,
+      excludeDeaths: true,
+      includeBirthdays: false,
+      familyFriendly: true,
+      preferredCategories: ["food", "animal", "science", "nature", "music", "books", "celebration"]
+    },
+
+    labels: {
+      todayIs: "TODAY IS",
+      onThisDay: "ON THIS DAY",
+      loading: "Finding something interesting about today…",
+      error: "Unable to load today's placard."
+    },
+
     width: 900,
     height: 520,
     refreshCheckInterval: 60000,
@@ -78,6 +105,8 @@ Add to `config/config.js`:
   }
 }
 ```
+
+`theme` can be `auto`, `modern`, `minimal`, `retro`, `history`, `celebration`, `science`, `food`, or `animal`. In `auto` mode each placard chooses a style from its content category. Set `rotationInterval` below `10000` to disable automatic rotation; manual navigation remains available.
 
 The default OpenAI model is `gpt-5.6-luna`, an OpenAI API model optimized for cost-sensitive workloads. The model is used only for editorial selection/copy/art direction; it does not generate HTML or CSS.
 
@@ -114,6 +143,18 @@ Examples:
 
 The fallback does not require a curated holiday list.
 
+Fallback selection is explainable. Each candidate receives a category, final score, and a list of scoring reasons. With `debug: true`, the display shows a compact source-health overlay and the Node log reports configuration corrections and upstream failures.
+
+## MagicMirror notifications
+
+The module accepts these notifications from other modules:
+
+- `TODAYIS_REFRESH` rebuilds today's content and images.
+- `TODAYIS_NEXT` and `TODAYIS_PREVIOUS` navigate the daily shortlist.
+- `TODAYIS_PAUSE` and `TODAYIS_RESUME` control automatic rotation.
+
+It emits `TODAYIS_UPDATED` with the date, placard count, and source diagnostics, and emits `TODAYIS_ERROR` when the display cannot be loaded. These notifications make it straightforward to integrate touch, voice, motion, or presence modules.
+
 ## Caching and offline behavior
 
 Each date is cached as JSON under:
@@ -121,6 +162,8 @@ Each date is cached as JSON under:
 ```text
 cache/YYYY-MM-DD.json
 ```
+
+Cache JSON uses a versioned day schema containing the placard shortlist and diagnostics. Legacy single-placard cache files are migrated in memory automatically.
 
 Images are cached under:
 
@@ -131,6 +174,23 @@ public/cache/YYYY-MM-DD-<image-hash>.<jpg|png|webp>
 The module silently prefetches tomorrow after successfully building today. Prefetched content is cached without being sent to the display, giving you a next-day placard if the network is temporarily unavailable during the next morning's startup.
 
 Old JSON and image cache files are pruned after `cacheDays`.
+
+## Standalone preview
+
+Open `preview/index.html` directly in a browser. The preview works without MagicMirror or a build step and lets you:
+
+- Change theme and card dimensions.
+- Toggle the background image.
+- Navigate sample short, medium, and long titles.
+- Paste and render a complete day JSON payload.
+
+This is intended for visual development; live source collection still runs through the MagicMirror Node helper.
+
+To inspect live source health and the ranked candidate list without launching MagicMirror, run:
+
+```bash
+npm run smoke -- 2026-08-31
+```
 
 ## Manual refresh
 
@@ -158,4 +218,4 @@ Run:
 npm run validate
 ```
 
-The validator checks file layout, JavaScript syntax, module naming, API endpoints, fallback paths, cache behavior, secret handling, and configuration structure. It also runs behavioral regression tests for silent prefetching, event-specific image queries, deterministic captions, and emoji configuration. It cannot guarantee that external services remain available or that an API key has access to a particular model.
+The validator checks file layout, JavaScript syntax, module naming, API endpoints, fallback paths, cache behavior, secret handling, and configuration structure. The behavioral suite covers silent prefetching, concurrent build sharing, schema-v2 day generation, content filtering, source diagnostics, event-specific image queries, image filtering, deterministic captions, and emoji configuration. GitHub Actions runs the suite on Node 18 and 22. It cannot guarantee that external services remain available or that an API key has access to a particular model.
