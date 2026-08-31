@@ -1,3 +1,4 @@
 cache/
+public/cache/
 *.log
 .env

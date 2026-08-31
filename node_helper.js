@@ -1,6 +1,7 @@
 const NodeHelper = require("node_helper");
 const fs = require("fs");
 const path = require("path");
+const crypto = require("crypto");
 
 const DEFAULTS = {
   countryCode: "US",
@@ -59,14 +60,14 @@ module.exports = NodeHelper.create({
     }
   },
 
-  async buildDay(date, force) {
+  async buildDay(date, force, { notify = true } = {}) {
     if (this.busy) return null;
     this.busy = true;
     let placard = null;
     try {
       const cached = !force ? readJson(this.cacheFile(date)) : null;
       if (cached?.title) {
-        this.sendSocketNotification("PLACARD", cached);
+        if (notify) this.sendSocketNotification("PLACARD", cached);
         placard = cached;
       } else {
         const candidates = await this.collectCandidates(date);
@@ -106,7 +107,7 @@ module.exports = NodeHelper.create({
         placard.generatedAt = new Date().toISOString();
         writeJson(this.cacheFile(date), placard);
         this.pruneCache();
-        this.sendSocketNotification("PLACARD", placard);
+        if (notify) this.sendSocketNotification("PLACARD", placard);
       }
       return placard;
     } finally {
@@ -117,12 +118,12 @@ module.exports = NodeHelper.create({
   async prefetchTomorrow(today) {
     const tomorrow = addDays(today, 1);
     if (readJson(this.cacheFile(tomorrow))?.title || this.busy) return;
-    await this.buildDay(tomorrow, false);
+    await this.buildDay(tomorrow, false, { notify: false });
   },
 
   async collectCandidates(date) {
     const jobs = [];
-    this.log(this.config)
+    this.log(`Collecting candidates for ${date}`);
     if (this.config.sources?.publicHolidays) jobs.push(this.fetchNager(date));
     if (this.config.sources?.wikipedia) jobs.push(this.fetchWikipedia(date));
     if (this.config.sources?.nationalDaysPage) jobs.push(this.fetchNationalDaysPage(date));
@@ -132,7 +133,9 @@ module.exports = NodeHelper.create({
       this.log(`source unavailable: ${err.message}`);
       return [];
     })));
-    return results.flat().filter(Boolean).sort((a, b) => (b.score || 0) - (a.score || 0)).slice(0, 60);
+    return uniqueByTitle(results.flat().filter(Boolean))
+      .sort((a, b) => (b.score || 0) - (a.score || 0))
+      .slice(0, 60);
   },
 
   async fetchLocalList(date) {
@@ -189,7 +192,9 @@ module.exports = NodeHelper.create({
               ? event.description.trim()
               : "",
           source: "local",
-          date: dateKey
+          date: dateKey,
+          type: "observance",
+          score: 88
         });
       }
 
@@ -223,13 +228,15 @@ module.exports = NodeHelper.create({
     const result = [];
     // Example output 
     // [{"tags":[],"_id":"60a2c383de7f16354791f65b","name":"National Bow Tie Day","month":8,"day":28},{"tags":[],"_id":"60a2c383de7f16354791f65c","name":"National Cherry Turnovers Day","month":8,"day":28},{"tags":[],"_id":"60a2c383de7f16354791f65a","name":"National Power Rangers Day","month":8,"day":28},{"tags":[],"_id":"60a2c383de7f16354791f65d","name":"Rainbow Bridge Remembrance Day","month":8,"day":28}]
-    for (const x of (data)) {
+    for (const x of (Array.isArray(data) ? data : [])) {
+      if (!x?.name || typeof x.name !== "string") continue;
       result.push(
         { 
           type: "holiday",
           title: x.name,
           description: `It's ${x.name}`,
-          source: "Todays Holidays"
+          source: "Todays Holidays",
+          score: 84
         }
       )
     }
@@ -310,8 +317,8 @@ module.exports = NodeHelper.create({
       title: title.toUpperCase().slice(0, 100),
       eyebrow: candidate?.type === "history" ? "ON THIS DAY" : "TODAY IS",
       caption,
-      emoji: meta.emoji,
-      imageQuery: meta.imageQuery || title,
+      emoji: this.config.fallback?.useEmoji === false ? "" : meta.emoji,
+      imageQuery: buildImageQuery(title),
       style: meta.style,
       accentColor: meta.accent,
       source: candidate?.source || "Local fallback",
@@ -321,24 +328,33 @@ module.exports = NodeHelper.create({
   },
 
   async findCommonsImage(query) {
-    const params = new URLSearchParams({ action: "query", generator: "search", gsrsearch: query, gsrnamespace: "6", gsrlimit: "10", prop: "imageinfo", iiprop: "url|extmetadata", iiurlwidth: "1400", format: "json", origin: "*" });
+    const params = new URLSearchParams({ action: "query", generator: "search", gsrsearch: query, gsrnamespace: "6", gsrlimit: "20", prop: "imageinfo", iiprop: "url|size|mime|extmetadata", iiurlwidth: "1400", format: "json", origin: "*" });
     const data = await fetchJson(`https://commons.wikimedia.org/w/api.php?${params}`);
     const pages = Object.values(data.query?.pages || {});
     const usable = pages.map(p => {
       const info = p.imageinfo?.[0];
       if (!info?.thumburl && !info?.url) return null;
+      if (!new Set(["image/jpeg", "image/png", "image/webp"]).has(info.mime)) return null;
+      if (Number(info.width) < 800 || Number(info.height) < 400) return null;
+      if (/\b(flag|logo|map|diagram|coat of arms|icon)\b/i.test(p.title)) return null;
       const meta = info.extmetadata || {};
       const license = cleanMeta(meta.LicenseShortName?.value);
       const artist = cleanMeta(meta.Artist?.value);
       const title = cleanMeta(meta.ObjectName?.value) || p.title.replace(/^File:/, "");
-      return { url: info.thumburl || info.url, contentType: info.mime || "image/jpeg", attribution: `Image: ${title}${artist ? ` — ${artist}` : ""}${license ? ` (${license})` : ""}` };
+      return { url: info.thumburl || info.url, contentType: info.mime, width: info.width, height: info.height, index: Number(p.index || 9999), attribution: `Image: ${title}${artist ? ` — ${artist}` : ""}${license ? ` (${license})` : ""}` };
     }).filter(Boolean);
+    usable.sort((a, b) => {
+      const aWide = a.width / a.height >= 1.25 ? 0 : 1;
+      const bWide = b.width / b.height >= 1.25 ? 0 : 1;
+      return aWide - bWide || a.index - b.index;
+    });
     return usable[0] || null;
   },
 
   async cacheImage(image, date) {
     const ext = image.contentType === "image/png" ? "png" : image.contentType === "image/webp" ? "webp" : "jpg";
-    const filename = `${date}.${ext}`;
+    const fingerprint = crypto.createHash("sha256").update(image.url).digest("hex").slice(0, 12);
+    const filename = `${date}-${fingerprint}.${ext}`;
     const file = path.join(this.publicCacheDir, filename);
     if (!fs.existsSync(file)) {
       const response = await fetchWithTimeout(image.url, { headers: { "User-Agent": "MMM-TodayIs/1.0 MagicMirror" } }, 30000);
@@ -347,7 +363,7 @@ module.exports = NodeHelper.create({
       if (buffer.length > 12 * 1024 * 1024) throw new Error("image exceeds 12MB limit");
       fs.writeFileSync(file, buffer, { mode: 0o600 });
     }
-    return { ...image, url: `/${this.name}/cache/${filename}` };
+    return { ...image, url: `/modules/${this.name}/public/cache/${filename}` };
   },
 
   cacheFile(date) { return path.join(this.cacheDir, `${date}.json`); },
@@ -359,7 +375,7 @@ module.exports = NodeHelper.create({
       try { if (Date.now() - fs.statSync(path.join(this.cacheDir, name)).mtimeMs > maxAge) fs.unlinkSync(path.join(this.cacheDir, name)); } catch (_) {}
     }
     for (const name of fs.readdirSync(this.publicCacheDir)) {
-      if (!/^\d{4}-\d{2}-\d{2}\.(?:jpg|png|webp)$/.test(name)) continue;
+      if (!/^\d{4}-\d{2}-\d{2}(?:-[a-f0-9]{12})?\.(?:jpg|png|webp)$/.test(name)) continue;
       try { if (Date.now() - fs.statSync(path.join(this.publicCacheDir, name)).mtimeMs > maxAge) fs.unlinkSync(path.join(this.publicCacheDir, name)); } catch (_) {}
     }
   },
@@ -422,7 +438,17 @@ function fallbackCaption(title, category) {
     generic: ["Apparently, this is a thing. And now you know.", "Your daily dose of something interesting."]
   };
   const choices = templates[category] || templates.generic;
-  return choices[Math.floor(Math.random() * choices.length)].slice(0, 140);
+  const index = [...title].reduce((sum, character) => sum + character.codePointAt(0), 0) % choices.length;
+  return choices[index].slice(0, 140);
+}
+function buildImageQuery(title) {
+  const cleanTitle = String(title)
+    .replace(/^(National|International|World|Global)\s+/i, "")
+    .replace(/\b(day|week|month)\b/gi, "")
+    .replace(/[^\p{L}\p{N}\s'-]/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return (cleanTitle || String(title)).slice(0, 100);
 }
 function fallbackDateTitle(date) {
   return new Intl.DateTimeFormat("en-US", { timeZone: "UTC", month: "long", day: "numeric" }).format(new Date(`${date}T12:00:00`));
@@ -475,6 +501,6 @@ function writeJson(file, data) { fs.writeFileSync(file, JSON.stringify(data, nul
 function cleanMeta(value) { return String(value || "").replace(/<[^>]*>/g, "").replace(/\s+/g, " ").trim().slice(0, 180); }
 function clone(obj) { return JSON.parse(JSON.stringify(obj)); }
 function mergeConfig(base, override) { const out = clone(base); for (const [k, v] of Object.entries(override || {})) out[k] = v && typeof v === "object" && !Array.isArray(v) ? { ...(out[k] || {}), ...v } : v; return out; }
-function uniqueByTitle(items) { const seen = new Set(); return items.filter(x => { const k = x.title.toLowerCase(); if (seen.has(k)) return false; seen.add(k); return true; }); }
+function uniqueByTitle(items) { const seen = new Set(); return items.filter(x => { if (!x?.title || typeof x.title !== "string") return false; const k = x.title.trim().toLowerCase(); if (!k || seen.has(k)) return false; seen.add(k); return true; }); }
 function htmlToText(html) { return html.replace(/<br\s*\/?>/gi, "\n").replace(/<\/p>|<\/li>|<\/h[1-6]>/gi, "\n").replace(/<[^>]+>/g, " ").replace(/&nbsp;/gi, " ").replace(/&amp;/gi, "&").replace(/&#39;/gi, "'").replace(/&quot;/gi, '"').replace(/\s+\n/g, "\n").replace(/\n\s+/g, "\n").trim(); }
 function escapeRegExp(value) { return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); }

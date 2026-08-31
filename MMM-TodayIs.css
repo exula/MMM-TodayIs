@@ -53,7 +53,7 @@
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
 
   transition:
-    opacity 700ms ease,
+    opacity var(--transition-duration, 700ms) ease,
     transform 7s ease;
 
   will-change: opacity, transform;
