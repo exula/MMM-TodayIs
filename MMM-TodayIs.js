@@ -16,6 +16,7 @@ Module.register("MMM-TodayIs", {
     locale: "en-US",
     showSource: true,
     theme: "auto",
+    textScale: 1.15,
     ai: { enabled: true, model: "gpt-5.6-luna", webSearch: true },
     sources: { publicHolidays: true, wikipedia: true, nationalDaysPage: true, funHolidays: true, localList: true, images: true },
     fallback: { enabled: true, useEmoji: true },
@@ -163,6 +164,7 @@ Module.register("MMM-TodayIs", {
     const configuredTheme = this.config.theme && this.config.theme !== "auto" ? this.config.theme : data.style;
     card.className = `today-is style-${safeClass(configuredTheme || "modern")} title-${titleSize}${data.imageUrl ? "" : " no-image"}`;
     card.style.setProperty("--accent", data.accentColor || "#f4b942");
+    card.style.setProperty("--text-scale", String(Math.min(1.8, Math.max(0.8, Number(this.config.textScale) || 1.15))));
     card.style.setProperty("--transition-duration", `${Number(this.config.transitionDuration) || 1000}ms`);
     card.setAttribute("role", "article");
     card.setAttribute("aria-label", `${data.eyebrow || "Today is"}: ${data.title || "Something interesting"}`);

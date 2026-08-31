@@ -23,6 +23,7 @@ function render() {
   const card = document.createElement("div");
   card.className = `today-is today-is-in style-${theme === "auto" ? data.style : theme} title-${length}${showImage && data.imageUrl ? "" : " no-image"}`;
   card.style.setProperty("--accent", data.accentColor);
+  card.style.setProperty("--text-scale", document.querySelector("#textScale").value);
   if (showImage && data.imageUrl) card.style.setProperty("--background-image", `url("${data.imageUrl}")`);
   card.innerHTML = `<div class="today-is-veil"></div><div class="today-is-content"><div class="today-is-eyebrow"></div><div class="today-is-emoji"></div><div class="today-is-title"></div><div class="today-is-caption"></div><div class="today-is-date"></div><div class="today-is-source"></div><div class="today-is-position"></div></div>`;
   card.querySelector(".today-is-eyebrow").textContent = data.eyebrow;
@@ -35,7 +36,7 @@ function render() {
   preview.replaceChildren(card);
 }
 
-for (const selector of ["#theme", "#width", "#height", "#image"]) document.querySelector(selector).addEventListener("input", render);
+for (const selector of ["#theme", "#width", "#height", "#textScale", "#image"]) document.querySelector(selector).addEventListener("input", render);
 document.querySelector("#next").addEventListener("click", () => { index = (index + 1) % day.placards.length; render(); });
 document.querySelector("#previous").addEventListener("click", () => { index = (index - 1 + day.placards.length) % day.placards.length; render(); });
 document.querySelector("#apply").addEventListener("click", () => {

@@ -60,6 +60,7 @@ Add to `config/config.js`:
     locale: "en-US",
     showSource: true,
     theme: "auto",
+    textScale: 1.15,
 
     ai: {
       enabled: true,
@@ -107,6 +108,8 @@ Add to `config/config.js`:
 ```
 
 `theme` can be `auto`, `modern`, `minimal`, `retro`, `history`, `celebration`, `science`, `food`, or `animal`. In `auto` mode each placard chooses a style from its content category. Set `rotationInterval` below `10000` to disable automatic rotation; manual navigation remains available.
+
+Typography scales automatically with the configured card width. Use `textScale` for viewing-distance adjustment: `1.0` is the baseline, `1.15` is the readable default, and values up to `1.8` are accepted.
 
 The default OpenAI model is `gpt-5.6-luna`, an OpenAI API model optimized for cost-sensitive workloads. The model is used only for editorial selection/copy/art direction; it does not generate HTML or CSS.
 
